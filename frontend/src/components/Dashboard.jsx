@@ -31,6 +31,8 @@ export default function Dashboard() {
       navigate('/login');
     } catch (error) {
       console.error('Error logging out:', error);
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       navigate('/login');
     }
   };

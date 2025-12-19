@@ -61,9 +61,19 @@ passport.use(
 );
 
 // ========== Keycloak OAuth Strategy ==========
+// Custom strategy to override authorizationParams
+class KeycloakOAuth2Strategy extends OAuth2Strategy {
+  authorizationParams(options) {
+    const params = super.authorizationParams(options);
+    // Force Keycloak to always show login screen
+    params.prompt = 'login';
+    return params;
+  }
+}
+
 passport.use(
   'keycloak',
-  new OAuth2Strategy(
+  new KeycloakOAuth2Strategy(
     {
       authorizationURL: `${process.env.KEYCLOAK_AUTH_SERVER_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/auth`,
       tokenURL: `${process.env.KEYCLOAK_AUTH_SERVER_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token`,
