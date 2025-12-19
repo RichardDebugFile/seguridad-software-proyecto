@@ -438,3 +438,345 @@ LIMIT 10;
 - [ ] Login con Keycloak probado y funcionando
 
 ¡Listo! Keycloak está configurado correctamente. 🎉
+
+---
+
+## 🔄 Single Sign-On (SSO)
+
+### ¿Qué es SSO?
+
+**Single Sign-On** permite que los usuarios se autentiquen UNA vez en Keycloak y luego accedan a múltiples aplicaciones sin tener que ingresar credenciales nuevamente.
+
+### Cómo Funciona en Este Proyecto
+
+Este proyecto implementa **SSO con Keycloak** con las siguientes características:
+
+#### 1️⃣ Login Normal (SSO Habilitado)
+
+**Ruta del backend:** `GET /auth/keycloak`
+
+**Comportamiento:**
+- Si el usuario **ya tiene una sesión SSO activa en Keycloak**, se autentica automáticamente **SIN pedir credenciales** ⚡
+- Si NO hay sesión SSO, muestra la pantalla de login de Keycloak
+
+**Ejemplo de uso:**
+1. Usuario hace login con Keycloak (ingresa credenciales)
+2. Usuario hace logout de nuestra app (pero NO cierra sesión en Keycloak)
+3. Usuario hace clic en "Keycloak" nuevamente
+4. **Auto-login** → No pide credenciales porque la sesión SSO está activa
+
+#### 2️⃣ Cambiar Usuario (Forzar Login)
+
+**Ruta del backend:** `GET /auth/keycloak/switch-user`
+
+**Comportamiento:**
+- **SIEMPRE** muestra la pantalla de login de Keycloak
+- Permite cambiar a otro usuario
+- Usa el parámetro `prompt=login` de OpenID Connect
+
+**Uso en la interfaz:**
+- Botón **"Cambiar Usuario"** (morado) en el Dashboard
+- Solo visible cuando estás autenticado con Keycloak
+
+**Ejemplo de uso:**
+1. Usuario está logueado con `testuser`
+2. Hace clic en "Cambiar Usuario"
+3. Keycloak muestra pantalla de login
+4. Usuario ingresa credenciales de `admin`
+5. Dashboard ahora muestra datos de `admin`
+
+#### 3️⃣ Logout Completo (Cierra SSO)
+
+**Ruta del backend:** `POST /auth/logout`
+
+**Comportamiento para usuarios de Keycloak:**
+1. Backend revoca los tokens JWT locales
+2. Backend devuelve `keycloakLogoutUrl`
+3. Frontend redirige a Keycloak logout endpoint
+4. Keycloak **cierra la sesión SSO**
+5. Keycloak redirige de vuelta al frontend
+6. Próximo login pedirá credenciales
+
+**URL de logout de Keycloak:**
+```
+http://localhost:8090/realms/tournament/protocol/openid-connect/logout?post_logout_redirect_uri=http://localhost:5173&client_id=tournament-system
+```
+
+**Comportamiento para Google/Local:**
+- Solo cierra sesión local (revoca tokens)
+- No hay SSO que cerrar
+
+---
+
+### Configuración Necesaria para SSO Logout
+
+Para que el logout de Keycloak funcione correctamente, asegúrate de tener configurado:
+
+**En Keycloak Admin Console:**
+
+1. Ve a **Clients** → **tournament-system**
+2. En **"Valid redirect URIs"**, agrega:
+   ```
+   http://localhost:5173/*
+   http://localhost:5173
+   ```
+3. Haz clic en **"Save"**
+
+Esto permite que Keycloak redirija al frontend después del logout.
+
+---
+
+### Flujos Completos de SSO
+
+#### Flujo 1: Primera Autenticación
+```
+Usuario → Click "Keycloak"
+       → Keycloak muestra login
+       → Usuario ingresa credenciales (testuser/Test123!)
+       → Keycloak crea sesión SSO
+       → Redirige a nuestra app con tokens
+       → Dashboard
+```
+
+#### Flujo 2: SSO Auto-Login
+```
+Usuario → Logout de nuestra app (SSO sigue activo en Keycloak)
+       → Click "Keycloak" nuevamente
+       → Keycloak detecta sesión SSO activa
+       → Auto-login ⚡ (sin pedir credenciales)
+       → Dashboard
+```
+
+#### Flujo 3: Cambiar Usuario
+```
+Dashboard → Click "Cambiar Usuario" (botón morado)
+         → Limpia tokens locales
+         → Redirige a /auth/keycloak/switch-user
+         → Keycloak muestra login (ignora SSO con prompt=login)
+         → Usuario ingresa otras credenciales (admin/Admin123!)
+         → Dashboard con nuevo usuario
+```
+
+#### Flujo 4: Logout Completo
+```
+Dashboard → Click "Cerrar Sesión" (botón rojo)
+         → Backend revoca tokens
+         → Backend devuelve keycloakLogoutUrl
+         → Frontend redirige a Keycloak logout
+         → Keycloak cierra sesión SSO
+         → Keycloak redirige a http://localhost:5173
+         → Pantalla de login
+         → Próximo login pedirá credenciales
+```
+
+---
+
+### Comparación: SSO vs Sin SSO
+
+| Característica | Con SSO (Keycloak) | Sin SSO (Google/Local) |
+|----------------|-------------------|----------------------|
+| **Login después de logout local** | Auto-login ⚡ | Pide credenciales |
+| **Cambiar usuario** | Botón "Cambiar Usuario" | Logout + Login con otro |
+| **Logout completo** | Cierra SSO en Keycloak | Solo local |
+| **Sesión compartida** | Sí (entre apps que usen Keycloak) | No |
+
+---
+
+### Probar SSO
+
+#### Prueba 1: Auto-Login con SSO
+
+1. Inicia sesión con Keycloak (`testuser/Test123!`)
+2. Haz clic en **"Cerrar Sesión"**
+   - **IMPORTANTE:** Esto NO cierra la sesión SSO si no completa el logout
+3. Haz clic en **"Keycloak"** nuevamente
+4. **Resultado:** Auto-login (no pide credenciales)
+
+#### Prueba 2: Cambiar Usuario
+
+1. Estás logueado con `testuser`
+2. Haz clic en **"Cambiar Usuario"** (botón morado)
+3. Keycloak muestra pantalla de login
+4. Ingresa credenciales de otro usuario (`admin/Admin123!`)
+5. **Resultado:** Dashboard muestra el nuevo usuario
+
+#### Prueba 3: Logout Completo
+
+1. Estás logueado con Keycloak
+2. Haz clic en **"Cerrar Sesión"** (botón rojo)
+3. Serás redirigido a Keycloak logout
+4. Keycloak te redirige de vuelta a http://localhost:5173
+5. Haz clic en **"Keycloak"** nuevamente
+6. **Resultado:** Keycloak pide credenciales (SSO cerrado)
+
+---
+
+### Código de Implementación
+
+#### Backend - Estrategia con Soporte SSO
+
+```javascript
+// backend/src/config/passport.js
+class KeycloakOAuth2Strategy extends OAuth2Strategy {
+  authorizationParams(options) {
+    const params = super.authorizationParams(options);
+    // Permite pasar prompt=login dinámicamente
+    if (options.prompt) {
+      params.prompt = options.prompt;
+    }
+    return params;
+  }
+}
+```
+
+#### Backend - Rutas SSO
+
+```javascript
+// backend/src/routes/auth.routes.js
+
+// SSO Login (usa sesión existente)
+router.get('/keycloak',
+  passport.authenticate('keycloak', {
+    scope: ['openid', 'profile', 'email']
+  })
+);
+
+// Cambiar Usuario (fuerza login)
+router.get('/keycloak/switch-user',
+  passport.authenticate('keycloak', {
+    scope: ['openid', 'profile', 'email'],
+    prompt: 'login' // ← Fuerza pantalla de login
+  })
+);
+
+// Logout con SSO
+router.post('/logout',
+  passport.authenticate('jwt', { session: false }),
+  async (req, res) => {
+    // Revoca tokens locales
+    await revokeRefreshToken(req.body.refreshToken);
+
+    // Si es usuario Keycloak, devuelve URL de logout SSO
+    if (req.user.provider === 'keycloak') {
+      const keycloakLogoutUrl = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=${FRONTEND_URL}&client_id=${CLIENT_ID}`;
+      return res.json({ keycloakLogoutUrl });
+    }
+
+    res.json({ message: 'Logout exitoso' });
+  }
+);
+```
+
+#### Frontend - Servicios SSO
+
+```javascript
+// frontend/src/utils/api.js
+
+export const authService = {
+  // SSO Login
+  keycloakLogin: () => {
+    window.location.href = `${API_URL}/auth/keycloak`;
+  },
+
+  // Cambiar Usuario
+  keycloakSwitchUser: () => {
+    window.location.href = `${API_URL}/auth/keycloak/switch-user`;
+  },
+
+  // Logout con SSO
+  logout: () => {
+    return api.post('/auth/logout', {
+      refreshToken: localStorage.getItem('refreshToken')
+    });
+  }
+};
+```
+
+#### Frontend - Dashboard con Botones SSO
+
+```jsx
+// frontend/src/components/Dashboard.jsx
+
+const handleLogout = async () => {
+  const response = await authService.logout();
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+
+  // Si Keycloak, redirige a logout SSO
+  if (response.data.keycloakLogoutUrl) {
+    window.location.href = response.data.keycloakLogoutUrl;
+  } else {
+    navigate('/login');
+  }
+};
+
+const handleSwitchUser = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  authService.keycloakSwitchUser();
+};
+
+// Botón Cambiar Usuario (solo para Keycloak)
+{user?.provider === 'keycloak' && (
+  <button onClick={handleSwitchUser} className="bg-purple-600">
+    Cambiar Usuario
+  </button>
+)}
+```
+
+---
+
+### Ventajas del SSO
+
+✅ **Experiencia de Usuario Mejorada**
+- Login rápido sin tener que ingresar credenciales repetidamente
+
+✅ **Gestión Centralizada**
+- Todas las sesiones se gestionan desde Keycloak
+- Fácil de auditar y monitorear
+
+✅ **Seguridad Mejorada**
+- Un solo punto de autenticación
+- Políticas de seguridad centralizadas
+- Fácil de revocar acceso a todas las apps
+
+✅ **Flexibilidad**
+- Permite cambiar de usuario cuando sea necesario
+- Logout completo cuando se requiere
+
+---
+
+### Desventajas del SSO
+
+❌ **Dependencia del Servidor SSO**
+- Si Keycloak cae, no se puede autenticar
+
+❌ **Complejidad Inicial**
+- Configuración más compleja que auth local
+
+❌ **Sesiones Persistentes**
+- Puede ser confuso para usuarios que esperan logout completo
+
+---
+
+### Mejores Prácticas
+
+1. **Timeout de Sesión**
+   - Configura timeouts razonables en Keycloak
+   - Realm settings → Tokens → SSO Session Idle/Max
+
+2. **Logging y Auditoría**
+   - Activa eventos de login en Keycloak
+   - Monitorea sesiones SSO activas
+
+3. **Comunicar al Usuario**
+   - Indica claramente cuando hay SSO activo
+   - Muestra badge "Keycloak" en el Dashboard
+
+4. **Testing**
+   - Prueba todos los flujos (login, logout, cambiar usuario)
+   - Verifica que el logout cierre SSO correctamente
+
+---
+
+¡SSO con Keycloak está completamente configurado! 🎉

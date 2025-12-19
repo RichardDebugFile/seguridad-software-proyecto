@@ -47,9 +47,28 @@ router.get(
 );
 
 // ========== Keycloak OAuth Routes ==========
+// Normal SSO login - uses existing Keycloak session if available
 router.get(
   '/keycloak',
-  passport.authenticate('keycloak', { scope: ['openid', 'profile', 'email'] })
+  (req, res, next) => {
+    // Capturar el parámetro 'redirect' para saber a dónde redirigir después del login
+    const redirectUrl = req.query.redirect || process.env.FRONTEND_URL;
+
+    // Guardar en sesión para usarlo en el callback
+    req.session = req.session || {};
+    req.session.redirectUrl = redirectUrl;
+
+    passport.authenticate('keycloak', { scope: ['openid', 'profile', 'email'] })(req, res, next);
+  }
+);
+
+// Force re-authentication - allows switching users
+router.get(
+  '/keycloak/switch-user',
+  passport.authenticate('keycloak', {
+    scope: ['openid', 'profile', 'email'],
+    prompt: 'login' // Force login screen to switch users
+  })
 );
 
 router.get(
@@ -69,9 +88,17 @@ router.get(
         ...clientInfo,
       });
 
+      // Obtener la URL de redirección de la sesión o usar la default
+      const redirectUrl = req.session?.redirectUrl || process.env.FRONTEND_URL;
+
+      // Limpiar la sesión
+      if (req.session) {
+        delete req.session.redirectUrl;
+      }
+
       // Redirect to frontend with tokens
       res.redirect(
-        `${process.env.FRONTEND_URL}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`
+        `${redirectUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`
       );
     } catch (error) {
       console.error('Keycloak callback error:', error);
@@ -212,12 +239,24 @@ router.post('/refresh', async (req, res) => {
 });
 
 // ========== Logout Route ==========
-router.post('/logout', async (req, res) => {
+router.post('/logout', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
     const { refreshToken } = req.body;
 
     if (refreshToken) {
       await revokeRefreshToken(refreshToken);
+    }
+
+    // If user authenticated with Keycloak, return Keycloak logout URL
+    if (req.user && req.user.provider === 'keycloak') {
+      // Agregar parámetro logout=true para que el frontend sepa que debe limpiar tokens
+      const redirectUrl = `${process.env.FRONTEND_URL}/login?logout=true`;
+      const keycloakLogoutUrl = `${process.env.KEYCLOAK_AUTH_SERVER_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=${encodeURIComponent(redirectUrl)}&client_id=${process.env.KEYCLOAK_CLIENT_ID}`;
+
+      return res.json({
+        message: 'Logout exitoso',
+        keycloakLogoutUrl
+      });
     }
 
     res.json({ message: 'Logout exitoso' });
@@ -237,6 +276,7 @@ router.get('/me', passport.authenticate('jwt', { session: false }), (req, res) =
       provider: req.user.provider,
       displayName: req.user.display_name,
       pictureUrl: req.user.picture_url,
+      roles: req.user.roles || [], // Include roles from JWT
     },
   });
 });

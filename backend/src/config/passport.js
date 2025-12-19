@@ -61,12 +61,14 @@ passport.use(
 );
 
 // ========== Keycloak OAuth Strategy ==========
-// Custom strategy to override authorizationParams
+// Custom strategy that supports dynamic prompt parameter
 class KeycloakOAuth2Strategy extends OAuth2Strategy {
   authorizationParams(options) {
     const params = super.authorizationParams(options);
-    // Force Keycloak to always show login screen
-    params.prompt = 'login';
+    // Allow passing prompt parameter dynamically (for SSO vs force login)
+    if (options.prompt) {
+      params.prompt = options.prompt;
+    }
     return params;
   }
 }
@@ -84,6 +86,22 @@ passport.use(
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
+        // Decode access token to extract roles
+        const base64Url = accessToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const tokenPayload = JSON.parse(Buffer.from(base64, 'base64').toString());
+
+        // Extract roles from token (supports both realm_access and roles formats)
+        let roles = [];
+        if (tokenPayload.realm_access && tokenPayload.realm_access.roles) {
+          roles = tokenPayload.realm_access.roles;
+        } else if (tokenPayload.roles) {
+          roles = tokenPayload.roles;
+        }
+
+        // Filter only our custom roles (user, admin)
+        const customRoles = roles.filter(role => ['user', 'admin'].includes(role));
+
         // Get user info from Keycloak
         const userInfoResponse = await axios.get(
           `${process.env.KEYCLOAK_AUTH_SERVER_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/userinfo`,
@@ -104,30 +122,33 @@ passport.use(
           [email, 'keycloak', keycloakId]
         );
 
+        let user;
         if (existingUser.rows.length > 0) {
-          // Update last login
+          // Update last login and roles
           await pool.query(
-            'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1',
-            [existingUser.rows[0].id]
+            'UPDATE users SET last_login = CURRENT_TIMESTAMP, roles = $1 WHERE id = $2',
+            [customRoles, existingUser.rows[0].id]
           );
-          return done(null, existingUser.rows[0]);
+          user = { ...existingUser.rows[0], roles: customRoles };
+        } else {
+          // Create new user with roles
+          const newUser = await pool.query(
+            `INSERT INTO users (email, username, provider, provider_id, display_name, picture_url, roles)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+            [
+              email,
+              keycloakUser.preferred_username || email.split('@')[0],
+              'keycloak',
+              keycloakId,
+              keycloakUser.name || keycloakUser.preferred_username,
+              keycloakUser.picture || null,
+              customRoles,
+            ]
+          );
+          user = newUser.rows[0];
         }
 
-        // Create new user
-        const newUser = await pool.query(
-          `INSERT INTO users (email, username, provider, provider_id, display_name, picture_url)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-          [
-            email,
-            keycloakUser.preferred_username || email.split('@')[0],
-            'keycloak',
-            keycloakId,
-            keycloakUser.name || keycloakUser.preferred_username,
-            keycloakUser.picture || null,
-          ]
-        );
-
-        return done(null, newUser.rows[0]);
+        return done(null, user);
       } catch (error) {
         console.error('Keycloak authentication error:', error);
         return done(error, null);

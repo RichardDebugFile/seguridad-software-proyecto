@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { authService } from '../utils/api';
 
@@ -13,6 +13,23 @@ export default function Login() {
   });
   const [error, setError] = useState(searchParams.get('error') || '');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Si llegamos desde Keycloak logout, limpiar tokens
+    const logoutParam = searchParams.get('logout');
+    if (logoutParam === 'true') {
+      console.log('Logout detectado desde Keycloak, limpiando tokens...');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+
+      // Notificar a otros portales/pestañas sobre el logout
+      localStorage.setItem('logout-event', Date.now().toString());
+      setTimeout(() => localStorage.removeItem('logout-event'), 100);
+
+      // Limpiar el parámetro de la URL
+      window.history.replaceState({}, document.title, '/login');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

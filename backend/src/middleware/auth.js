@@ -6,6 +6,7 @@ export function generateTokens(user) {
     sub: user.id,
     email: user.email,
     provider: user.provider,
+    roles: user.roles || [], // Include roles in JWT payload
   };
 
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -23,6 +24,13 @@ export async function saveRefreshToken(userId, refreshToken) {
   const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
   const expiresAt = new Date(decoded.exp * 1000);
 
+  // Revocar tokens antiguos del usuario antes de insertar uno nuevo
+  await pool.query(
+    'UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE',
+    [userId]
+  );
+
+  // Insertar el nuevo token
   await pool.query(
     'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
     [userId, refreshToken, expiresAt]
@@ -68,4 +76,28 @@ export function requireAuth(req, res, next) {
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+// Middleware to check if user has admin role
+export function requireAdmin(req, res, next) {
+  if (!req.user || !req.user.roles || !req.user.roles.includes('admin')) {
+    return res.status(403).json({
+      error: 'Acceso denegado',
+      message: 'Se requiere rol de administrador para acceder a este recurso'
+    });
+  }
+  next();
+}
+
+// Middleware to check if user has specific role
+export function requireRole(role) {
+  return (req, res, next) => {
+    if (!req.user || !req.user.roles || !req.user.roles.includes(role)) {
+      return res.status(403).json({
+        error: 'Acceso denegado',
+        message: `Se requiere rol '${role}' para acceder a este recurso`
+      });
+    }
+    next();
+  };
 }

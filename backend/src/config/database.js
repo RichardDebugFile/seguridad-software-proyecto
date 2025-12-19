@@ -41,10 +41,24 @@ export async function initializeDatabase() {
         provider_id VARCHAR(255),
         display_name VARCHAR(255),
         picture_url TEXT,
+        roles TEXT[] DEFAULT '{}',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_login TIMESTAMP,
         is_active BOOLEAN DEFAULT TRUE
       );
+    `);
+
+    // Add roles column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='users' AND column_name='roles'
+        ) THEN
+          ALTER TABLE users ADD COLUMN roles TEXT[] DEFAULT '{}';
+        END IF;
+      END $$;
     `);
 
     // Create audit_logs table

@@ -72,6 +72,10 @@ export const authService = {
   keycloakLogin: () => {
     window.location.href = `${API_URL}/auth/keycloak`;
   },
+
+  keycloakSwitchUser: () => {
+    window.location.href = `${API_URL}/auth/keycloak/switch-user`;
+  },
 };
 
 export default api;
