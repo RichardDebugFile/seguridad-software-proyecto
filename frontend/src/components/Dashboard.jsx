@@ -37,144 +37,130 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      <div className="min-h-screen gradient-animated flex items-center justify-center">
+        <div className="text-center animate-fadeIn">
+          <div className="spinner-gradient mx-auto mb-4"></div>
+          <p className="text-white text-lg font-semibold">Cargando Sistema...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
+    <div className="min-h-screen bg-neutral-50 overflow-hidden relative">
+      <nav className="glass-dark sticky top-0 z-50 shadow-2xl animate-fadeDown border-b border-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 flex items-center">
-                <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                </div>
-                <span className="ml-3 text-xl font-bold text-gray-900">
-                  Sistema Seguro
-                </span>
+          <div className="flex justify-between h-24 items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 gradient-primary rounded-2xl flex items-center justify-center shadow-[0_0_20px_rgba(102,126,234,0.4)] transform hover:rotate-6 transition-transform">
+                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                </svg>
+              </div>
+              <div>
+                <span className="text-2xl font-black text-white tracking-tighter">UDLA <span className="text-blue-400">ARENA</span></span>
+                <p className="text-[10px] text-gray-400 font-bold tracking-[0.2em] uppercase">Tournament Management</p>
               </div>
             </div>
-            <div className="flex items-center">
+
+            <div className="flex items-center gap-6">
+              <div className="hidden md:flex flex-col items-end text-sm">
+                <span className="text-white font-bold">{user?.displayName || user?.username}</span>
+                <span className="text-gray-400 text-xs">Administrador</span>
+              </div>
               <button
                 onClick={handleLogout}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 transition"
+                className="bg-white/10 hover:bg-red-500 text-white px-6 py-3 rounded-2xl font-black text-sm transition-all border border-white/10 hover:border-red-400"
               >
-                Cerrar Sesión
+                CERRAR SESIÓN
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          <div className="bg-white shadow rounded-lg p-6">
-            <div className="flex items-center space-x-4">
-              {user?.pictureUrl && (
-                <img
-                  src={user.pictureUrl}
-                  alt="Profile"
-                  className="w-20 h-20 rounded-full"
-                />
-              )}
+      <main className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 relative z-10">
+        <header className="mb-16 animate-fadeIn">
+          <h2 className="text-5xl font-black text-gray-900 mb-4 tracking-tighter">MENÚ <span className="text-indigo-600">PRINCIPAL</span></h2>
+          <p className="text-gray-500 text-xl font-medium">Bienvenido al centro de mando de Torneos UDLA.</p>
+        </header>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+          {/* Module 1: Management (CRUDs) */}
+          <div
+            onClick={() => navigate('/management')}
+            className="group relative h-[450px] rounded-[3rem] overflow-hidden cursor-pointer shadow-2xl animate-slideUp"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-700 to-blue-900 z-0 transition-transform duration-700 group-hover:scale-110" />
+            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+
+            <div className="relative z-10 h-full p-12 flex flex-col justify-between text-white">
               <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  ¡Bienvenido, {user?.displayName || user?.username}!
-                </h2>
-                <p className="text-gray-600">{user?.email}</p>
-                <div className="mt-2">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                    user?.provider === 'google' ? 'bg-blue-100 text-blue-800' :
-                    user?.provider === 'keycloak' ? 'bg-purple-100 text-purple-800' :
-                    'bg-green-100 text-green-800'
-                  }`}>
-                    {user?.provider === 'google' && (
-                      <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24">
-                        <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      </svg>
-                    )}
-                    Autenticado con {user?.provider}
-                  </span>
+                <div className="w-20 h-20 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center text-5xl mb-8 group-hover:bg-white group-hover:text-indigo-900 transition-all duration-500">
+                  📁
                 </div>
+                <h3 className="text-5xl font-black mb-4 tracking-tighter">GESTIÓN <span className="block opacity-60">ADMINISTRATIVA</span></h3>
+                <p className="text-indigo-100 text-lg font-medium max-w-xs leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                  Control total sobre equipos, jugadores, encuentros y categorías del torneo.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-4 text-2xl font-black transform translate-y-20 group-hover:translate-y-0 transition-transform duration-500">
+                ENTRAR AQUÍ <span>→</span>
               </div>
             </div>
 
-            <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-blue-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-blue-900">Autenticación</p>
-                    <p className="text-2xl font-bold text-blue-700">Segura</p>
-                  </div>
+            {/* Background design elements */}
+            <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+          </div>
+
+          {/* Module 2: Reports */}
+          <div
+            onClick={() => navigate('/reports')}
+            className="group relative h-[450px] rounded-[3rem] overflow-hidden cursor-pointer shadow-2xl animate-slideUp stagger-delay-1"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-600 to-teal-800 z-0 transition-transform duration-700 group-hover:scale-110" />
+            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+
+            <div className="relative z-10 h-full p-12 flex flex-col justify-between text-white">
+              <div>
+                <div className="w-20 h-20 bg-white/10 backdrop-blur-xl rounded-3xl flex items-center justify-center text-5xl mb-8 group-hover:bg-white group-hover:text-emerald-900 transition-all duration-500">
+                  📉
                 </div>
+                <h3 className="text-5xl font-black mb-4 tracking-tighter">ANÁLISIS <span className="block opacity-60">DE DATOS</span></h3>
+                <p className="text-emerald-500 font-medium max-w-xs leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-white px-4 py-2 rounded-xl">
+                  Tablas de posiciones, goleadores y estadísticas en tiempo real.
+                </p>
               </div>
 
-              <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-lg">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-green-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-green-900">Estado</p>
-                    <p className="text-2xl font-bold text-green-700">Activo</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-6 rounded-lg">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-purple-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-purple-900">Sesión</p>
-                    <p className="text-2xl font-bold text-purple-700">JWT</p>
-                  </div>
-                </div>
+              <div className="flex items-center gap-4 text-2xl font-black transform translate-y-20 group-hover:translate-y-0 transition-transform duration-500">
+                CONSULTAR <span>→</span>
               </div>
             </div>
 
-            <div className="mt-8 bg-gray-50 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Información de Sesión
-              </h3>
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Email</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user?.email}</dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Proveedor</dt>
-                  <dd className="mt-1 text-sm text-gray-900 capitalize">{user?.provider}</dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">ID de Usuario</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user?.id}</dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-gray-500">Nombre de Usuario</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{user?.username || 'No disponible'}</dd>
-                </div>
-              </dl>
+            {/* Background design elements */}
+            <div className="absolute -top-20 -left-20 w-80 h-80 bg-white/5 rounded-full blur-3xl" />
+          </div>
+        </div>
+
+        {/* User Card (Small Footer) */}
+        <div className="mt-16 flex justify-center animate-fadeIn stagger-delay-3">
+          <div className="bg-white rounded-3xl p-6 shadow-xl flex items-center gap-6 border border-gray-100 max-w-md w-full">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-100 flex items-center justify-center text-3xl">
+              👤
+            </div>
+            <div>
+              <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Usuario Actual</p>
+              <p className="text-xl font-black text-gray-900">{user?.displayName || user?.username}</p>
+              <p className="text-sm text-gray-500">{user?.email}</p>
             </div>
           </div>
         </div>
       </main>
+
+      {/* Decorative patterns */}
+      <div className="absolute top-0 right-0 w-1/3 h-full bg-indigo-50/50 -skew-x-12 transform translate-x-1/2 -z-0" />
     </div>
   );
 }
