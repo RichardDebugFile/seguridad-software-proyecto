@@ -4,10 +4,11 @@ const API_URL = 'http://localhost:3000';
 const TOURNAMENT_API = 'http://localhost:3001';
 const PLAYER_API = 'http://localhost:3002';
 
-// Create axios instance with auth headers
+// Create axios instance with auth headers and token refresh
 const createAuthApi = (baseURL) => {
   const api = axios.create({ baseURL });
 
+  // Request interceptor: Agregar token a cada request
   api.interceptors.request.use((config) => {
     const token = localStorage.getItem('accessToken');
     if (token) {
@@ -15,6 +16,31 @@ const createAuthApi = (baseURL) => {
     }
     return config;
   });
+
+  // Response interceptor: Manejar errores 401 y prevenir refresh durante logout
+  api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      const originalRequest = error.config;
+
+      // ⚠️ IMPORTANTE: No refrescar token si hay un logout en progreso
+      if (localStorage.getItem('logout_in_progress')) {
+        console.log('🚫 [Admin] Logout en progreso, no se refrescará el token');
+        return Promise.reject(error);
+      }
+
+      // Redirigir a login en caso de 401 (no autorizado)
+      if (error.response?.status === 401 && !originalRequest._retry) {
+        console.log('⚠️ [Admin] Token inválido o expirado, redirigiendo a login');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        window.location.href = 'http://localhost:5173/login';
+        return Promise.reject(error);
+      }
+
+      return Promise.reject(error);
+    }
+  );
 
   return api;
 };

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../utils/api';
+import { clearAllStorage } from '../utils/cleanStorage';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -29,20 +30,6 @@ export default function Dashboard() {
 
   const loadUser = async () => {
     try {
-      // Verificar si hay tokens en query params (pasados desde el Panel Admin)
-      const urlParams = new URLSearchParams(window.location.search);
-      const accessTokenParam = urlParams.get('accessToken');
-      const refreshTokenParam = urlParams.get('refreshToken');
-
-      if (accessTokenParam && refreshTokenParam) {
-        console.log('Tokens recibidos desde Panel Admin, guardando...');
-        localStorage.setItem('accessToken', accessTokenParam);
-        localStorage.setItem('refreshToken', refreshTokenParam);
-
-        // Limpiar URL sin recargar
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
       const response = await authService.getCurrentUser();
       setUser(response.data.user);
     } catch (error) {
@@ -55,31 +42,53 @@ export default function Dashboard() {
 
   const handleLogout = async () => {
     try {
+      console.log('🚪 Iniciando proceso de logout...');
+
+      // 1. Marcar logout en progreso (evita que el interceptor refresque el token)
+      localStorage.setItem('logout_in_progress', 'true');
+
+      // 2. Notificar a otros portales/pestañas sobre el logout
+      localStorage.setItem('logout-event', Date.now().toString());
+
+      // 3. Intentar revocar tokens en el backend
       const response = await authService.logout();
 
-      // Notificar a otros portales/pestañas sobre el logout
-      localStorage.setItem('logout-event', Date.now().toString());
-      setTimeout(() => localStorage.removeItem('logout-event'), 100);
+      // 4. Limpiar COMPLETAMENTE el almacenamiento (localStorage, sessionStorage, IndexedDB)
+      await clearAllStorage();
 
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      console.log('✅ Logout completado, redirigiendo...');
 
-      // If Keycloak user, redirect to Keycloak logout to close SSO session
+      // 5. CRÍTICO: Limpiar historial del navegador para prevenir botón retroceder
+      // Reemplazar todas las entradas del historial con la página de login
+      const loginUrl = '/login';
+      window.history.pushState(null, '', loginUrl);
+      window.history.pushState(null, '', loginUrl);
+      window.history.pushState(null, '', loginUrl);
+      window.history.replaceState(null, '', loginUrl);
+
+      // 6. Redirigir a Keycloak logout si es usuario de Keycloak (cierra SSO)
       if (response.data.keycloakLogoutUrl) {
-        window.location.href = response.data.keycloakLogoutUrl;
+        console.log('🔑 Redirigiendo a Keycloak logout para cerrar SSO...');
+        window.location.replace(response.data.keycloakLogoutUrl);
       } else {
-        navigate('/login');
+        window.location.replace(loginUrl);
       }
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error('❌ Error durante logout:', error);
 
-      // Notificar a otros portales/pestañas sobre el logout
+      // Incluso si falla el backend, limpiar todo localmente
       localStorage.setItem('logout-event', Date.now().toString());
-      setTimeout(() => localStorage.removeItem('logout-event'), 100);
+      await clearAllStorage();
 
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      navigate('/login');
+      // Limpiar historial antes de redirigir
+      const loginUrl = '/login';
+      window.history.pushState(null, '', loginUrl);
+      window.history.pushState(null, '', loginUrl);
+      window.history.pushState(null, '', loginUrl);
+      window.history.replaceState(null, '', loginUrl);
+
+      console.log('✅ Almacenamiento limpiado, redirigiendo a login...');
+      window.location.replace(loginUrl);
     }
   };
 
@@ -121,10 +130,11 @@ export default function Dashboard() {
               {user?.roles?.includes('admin') && (
                 <button
                   onClick={() => {
-                    // Pasar tokens al Panel Admin vía query params
-                    const accessToken = localStorage.getItem('accessToken');
-                    const refreshToken = localStorage.getItem('refreshToken');
-                    window.location.href = `http://localhost:5174?accessToken=${accessToken}&refreshToken=${refreshToken}`;
+                    console.log('🔄 Navegando a Panel Admin vía Keycloak SSO...');
+                    // Redirigir a autenticación de Keycloak
+                    // Como ya hay sesión SSO activa en Keycloak, auto-autentica sin pedir credenciales
+                    // Después del login, redirige al Panel Admin con nuevos tokens
+                    window.location.href = 'http://localhost:3000/auth/keycloak?redirect=http://localhost:5174';
                   }}
                   className="bg-purple-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-purple-700 transition flex items-center gap-2"
                 >

@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import session from 'express-session';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import passport from './config/passport.js';
@@ -16,10 +17,36 @@ const PORT = process.env.PORT || 3000;
 
 // ========== Middleware ==========
 app.use(helmet());
+
+// CRÍTICO: Prevenir cache del navegador en todas las respuestas
+// Esto evita que el botón retroceder muestre páginas protegidas después del logout
+app.use((req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  });
+  next();
+});
+
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Session configuration - Required for Keycloak redirect flow
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production', // true in production with HTTPS
+      httpOnly: true,
+      maxAge: 10 * 60 * 1000, // 10 minutes (sufficient for OAuth flow)
+    },
+  })
+);
 
 // CORS Configuration - permitir ambos frontends
 app.use(
@@ -32,13 +59,18 @@ app.use(
   })
 );
 
-// Rate Limiting
-const limiter = rateLimit({
+// Rate Limiting - Solo para rutas críticas (login/register)
+// No aplicar a /auth/me ya que se llama frecuentemente para validación
+const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // Más permisivo en desarrollo
   message: 'Demasiadas peticiones desde esta IP, intenta de nuevo más tarde',
+  skip: (req) => {
+    // No aplicar rate limiting a rutas de validación
+    return req.path === '/me' || req.path === '/refresh';
+  }
 });
-app.use('/auth', limiter);
+app.use('/auth', authLimiter);
 
 // Passport initialization
 app.use(passport.initialize());

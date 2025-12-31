@@ -57,3 +57,6 @@ temp/
 **/*-secret.txt
 **/*.pem
 **/*.key
+nul
+.claude/
+tareas/

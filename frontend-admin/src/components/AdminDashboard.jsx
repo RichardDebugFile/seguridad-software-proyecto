@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService, tournamentService, playerService } from '../utils/api';
+import { clearAllStorage } from '../utils/cleanStorage';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -33,52 +34,34 @@ export default function AdminDashboard() {
 
   const loadUser = async () => {
     try {
-      // Verificar si hay tokens en query params (pasados desde el Portal Usuario)
-      const urlParams = new URLSearchParams(window.location.search);
-      const accessTokenParam = urlParams.get('accessToken');
-      const refreshTokenParam = urlParams.get('refreshToken');
-
-      if (accessTokenParam && refreshTokenParam) {
-        console.log('Tokens recibidos desde Portal Usuario, guardando...');
-        localStorage.setItem('accessToken', accessTokenParam);
-        localStorage.setItem('refreshToken', refreshTokenParam);
-
-        // Limpiar URL sin recargar
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
-      // Verificar si tenemos token en localStorage
-      const token = localStorage.getItem('accessToken');
-
-      if (!token) {
-        console.log('No token found, mostrando acceso denegado');
-        setIsAdmin(false);
-        setLoading(false);
-        return;
-      }
+      // ProtectedRoute ya verificó que hay token válido y rol admin
+      // Solo necesitamos cargar los datos del usuario
+      console.log('✅ Cargando datos del usuario administrador...');
 
       const response = await authService.getCurrentUser();
       const userData = response.data.user;
       setUser(userData);
 
-      // Verificar si el usuario tiene rol admin
+      // Verificar rol admin (doble verificación por seguridad)
       if (!userData.roles || !userData.roles.includes('admin')) {
+        console.error('⚠️ Usuario sin rol admin detectado');
         setIsAdmin(false);
       } else {
         setIsAdmin(true);
-        loadData();
+        loadData(); // Cargar torneos y jugadores
       }
     } catch (error) {
-      console.error('Error loading user:', error);
+      console.error('❌ Error loading user:', error);
 
-      // Si el error es 401 (no autorizado), limpiar tokens
+      // Si el error es 401 (no autorizado), limpiar tokens y redirigir a login
       if (error.response && error.response.status === 401) {
-        console.log('Token invalid or expired');
+        console.log('🔄 Token inválido, limpiando y redirigiendo...');
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
+        window.location.href = 'http://localhost:5173/login';
+        return;
       }
 
-      // Mostrar acceso denegado
       setIsAdmin(false);
     } finally {
       setLoading(false);
@@ -100,30 +83,54 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     try {
+      console.log('🚪 [Admin] Iniciando proceso de logout...');
+
+      // 1. Marcar logout en progreso (evita que el interceptor refresque el token)
+      localStorage.setItem('logout_in_progress', 'true');
+
+      // 2. Notificar a otros portales/pestañas sobre el logout
+      localStorage.setItem('logout-event', Date.now().toString());
+
+      // 3. Intentar revocar tokens en el backend
       const response = await authService.logout();
 
-      // Notificar a otros portales/pestañas sobre el logout
-      localStorage.setItem('logout-event', Date.now().toString());
-      setTimeout(() => localStorage.removeItem('logout-event'), 100);
+      // 4. Limpiar COMPLETAMENTE el almacenamiento (localStorage, sessionStorage, IndexedDB)
+      await clearAllStorage();
 
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      console.log('✅ [Admin] Logout completado, redirigiendo...');
 
+      // 5. CRÍTICO: Limpiar historial del navegador para prevenir botón retroceder
+      // Reemplazar todas las entradas del historial con la página de login
+      const loginUrl = 'http://localhost:5173/login';
+      window.history.pushState(null, '', window.location.href);
+      window.history.pushState(null, '', window.location.href);
+      window.history.pushState(null, '', window.location.href);
+      window.history.replaceState(null, '', window.location.href);
+
+      // 6. Redirigir a Keycloak logout si es usuario de Keycloak (cierra SSO)
       if (response.data.keycloakLogoutUrl) {
-        window.location.href = response.data.keycloakLogoutUrl;
+        console.log('🔑 [Admin] Redirigiendo a Keycloak logout para cerrar SSO...');
+        window.location.replace(response.data.keycloakLogoutUrl);
       } else {
-        window.location.href = 'http://localhost:5173';
+        // Redirigir al Portal Usuario si no es Keycloak
+        window.location.replace(loginUrl);
       }
     } catch (error) {
-      console.error('Error logging out:', error);
+      console.error('❌ [Admin] Error durante logout:', error);
 
-      // Notificar a otros portales/pestañas sobre el logout
+      // Incluso si falla el backend, limpiar todo localmente
       localStorage.setItem('logout-event', Date.now().toString());
-      setTimeout(() => localStorage.removeItem('logout-event'), 100);
+      await clearAllStorage();
 
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      window.location.href = 'http://localhost:5173';
+      // Limpiar historial antes de redirigir
+      const loginUrl = 'http://localhost:5173/login';
+      window.history.pushState(null, '', window.location.href);
+      window.history.pushState(null, '', window.location.href);
+      window.history.pushState(null, '', window.location.href);
+      window.history.replaceState(null, '', window.location.href);
+
+      console.log('✅ [Admin] Almacenamiento limpiado, redirigiendo a login...');
+      window.location.replace(loginUrl);
     }
   };
 
@@ -205,10 +212,11 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => {
-                  // Pasar tokens al Portal Usuario vía query params para acceso directo
-                  const accessToken = localStorage.getItem('accessToken');
-                  const refreshToken = localStorage.getItem('refreshToken');
-                  window.location.href = `http://localhost:5173/dashboard?accessToken=${accessToken}&refreshToken=${refreshToken}`;
+                  console.log('🔄 Navegando a Portal Usuario vía Keycloak SSO...');
+                  // Redirigir a autenticación de Keycloak
+                  // Como ya hay sesión SSO activa en Keycloak, auto-autentica sin pedir credenciales
+                  // Después del login, redirige al Portal Usuario con nuevos tokens
+                  window.location.href = 'http://localhost:3000/auth/keycloak?redirect=http://localhost:5173';
                 }}
                 className="bg-white text-purple-600 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition"
               >

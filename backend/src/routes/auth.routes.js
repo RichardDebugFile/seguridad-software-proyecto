@@ -47,7 +47,7 @@ router.get(
 );
 
 // ========== Keycloak OAuth Routes ==========
-// Normal SSO login - uses existing Keycloak session if available
+// Normal login - shows Keycloak login form
 router.get(
   '/keycloak',
   (req, res, next) => {
@@ -58,7 +58,27 @@ router.get(
     req.session = req.session || {};
     req.session.redirectUrl = redirectUrl;
 
-    passport.authenticate('keycloak', { scope: ['openid', 'profile', 'email'] })(req, res, next);
+    passport.authenticate('keycloak', {
+      scope: ['openid', 'profile', 'email']
+    })(req, res, next);
+  }
+);
+
+// Silent SSO - auto-login if Keycloak session exists, fails silently if not
+router.get(
+  '/keycloak/silent',
+  (req, res, next) => {
+    const redirectUrl = req.query.redirect || process.env.FRONTEND_URL;
+
+    req.session = req.session || {};
+    req.session.redirectUrl = redirectUrl;
+    req.session.silentSSO = true; // Flag to detect silent SSO in callback
+
+    // prompt: 'none' for silent SSO - if no session, Keycloak returns error
+    passport.authenticate('keycloak', {
+      scope: ['openid', 'profile', 'email'],
+      prompt: 'none'
+    })(req, res, next);
   }
 );
 
@@ -73,37 +93,61 @@ router.get(
 
 router.get(
   '/keycloak/callback',
-  passport.authenticate('keycloak', { session: false, failureRedirect: `${process.env.FRONTEND_URL}/login?error=keycloak_auth_failed` }),
-  async (req, res) => {
-    try {
-      const { accessToken, refreshToken } = generateTokens(req.user);
-      await saveRefreshToken(req.user.id, refreshToken);
-
-      const clientInfo = getClientInfo(req);
-      await logAuthEvent({
-        userId: req.user.id,
-        provider: 'keycloak',
-        action: 'login',
-        success: true,
-        ...clientInfo,
-      });
-
-      // Obtener la URL de redirección de la sesión o usar la default
+  (req, res, next) => {
+    // Custom callback para manejar errores del SSO silencioso
+    passport.authenticate('keycloak', { session: false }, async (err, user, info) => {
       const redirectUrl = req.session?.redirectUrl || process.env.FRONTEND_URL;
+      const isSilentSSO = req.session?.silentSSO || false;
 
-      // Limpiar la sesión
-      if (req.session) {
-        delete req.session.redirectUrl;
+      // Si hay error o no hay usuario
+      if (err || !user) {
+        console.log('Keycloak authentication failed:', err || info);
+
+        // Limpiar sesión
+        if (req.session) {
+          delete req.session.redirectUrl;
+          delete req.session.silentSSO;
+        }
+
+        // Si es SSO silencioso que falló, redirigir con flag
+        if (isSilentSSO) {
+          console.log('Silent SSO failed, redirecting with sso_failed flag');
+          return res.redirect(`${redirectUrl}?sso_failed=true`);
+        }
+
+        // Si es login normal que falló, redirigir al login
+        return res.redirect(`${process.env.FRONTEND_URL}/login?error=keycloak_auth_failed`);
       }
 
-      // Redirect to frontend with tokens
-      res.redirect(
-        `${redirectUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`
-      );
-    } catch (error) {
-      console.error('Keycloak callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=callback_failed`);
-    }
+      // Autenticación exitosa
+      try {
+        const { accessToken, refreshToken } = generateTokens(user);
+        await saveRefreshToken(user.id, refreshToken);
+
+        const clientInfo = getClientInfo(req);
+        await logAuthEvent({
+          userId: user.id,
+          provider: 'keycloak',
+          action: 'login',
+          success: true,
+          ...clientInfo,
+        });
+
+        // Limpiar la sesión
+        if (req.session) {
+          delete req.session.redirectUrl;
+          delete req.session.silentSSO;
+        }
+
+        // Redirect to frontend with tokens
+        res.redirect(
+          `${redirectUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`
+        );
+      } catch (error) {
+        console.error('Keycloak callback error:', error);
+        res.redirect(`${process.env.FRONTEND_URL}/login?error=callback_failed`);
+      }
+    })(req, res, next);
   }
 );
 
@@ -241,11 +285,14 @@ router.post('/refresh', async (req, res) => {
 // ========== Logout Route ==========
 router.post('/logout', passport.authenticate('jwt', { session: false }), async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    // CRÍTICO: Revocar TODOS los refresh tokens del usuario
+    // Esto cierra la sesión en todos los portales/dispositivos
+    await pool.query(
+      'DELETE FROM refresh_tokens WHERE user_id = $1',
+      [req.user.id]
+    );
 
-    if (refreshToken) {
-      await revokeRefreshToken(refreshToken);
-    }
+    console.log(`✅ Revocados todos los refresh tokens del usuario ${req.user.id}`);
 
     // If user authenticated with Keycloak, return Keycloak logout URL
     if (req.user && req.user.provider === 'keycloak') {
@@ -267,18 +314,39 @@ router.post('/logout', passport.authenticate('jwt', { session: false }), async (
 });
 
 // ========== Get Current User Route ==========
-router.get('/me', passport.authenticate('jwt', { session: false }), (req, res) => {
-  res.json({
-    user: {
-      id: req.user.id,
-      email: req.user.email,
-      username: req.user.username,
-      provider: req.user.provider,
-      displayName: req.user.display_name,
-      pictureUrl: req.user.picture_url,
-      roles: req.user.roles || [], // Include roles from JWT
-    },
-  });
+router.get('/me', passport.authenticate('jwt', { session: false }), async (req, res) => {
+  try {
+    // CRÍTICO: Verificar que exista al menos un refresh token activo para este usuario
+    // Si hizo logout, todos los refresh tokens fueron revocados, por lo que este access token
+    // ya no debería ser válido aunque no haya expirado
+    const result = await pool.query(
+      'SELECT COUNT(*) as count FROM refresh_tokens WHERE user_id = $1',
+      [req.user.id]
+    );
+
+    const hasActiveSession = parseInt(result.rows[0].count) > 0;
+
+    if (!hasActiveSession) {
+      return res.status(401).json({
+        error: 'Sesión inválida - no hay refresh tokens activos'
+      });
+    }
+
+    res.json({
+      user: {
+        id: req.user.id,
+        email: req.user.email,
+        username: req.user.username,
+        provider: req.user.provider,
+        displayName: req.user.display_name,
+        pictureUrl: req.user.picture_url,
+        roles: req.user.roles || [], // Include roles from JWT
+      },
+    });
+  } catch (error) {
+    console.error('Error verificando sesión:', error);
+    res.status(500).json({ error: 'Error al verificar sesión' });
+  }
 });
 
 export default router;

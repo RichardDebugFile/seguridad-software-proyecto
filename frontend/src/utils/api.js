@@ -24,11 +24,26 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // ⚠️ IMPORTANTE: No refrescar token si hay un logout en progreso
+    if (localStorage.getItem('logout_in_progress')) {
+      console.log('🚫 Logout en progreso, no se refrescará el token');
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
       try {
         const refreshToken = localStorage.getItem('refreshToken');
+
+        // Si no hay refresh token, redirigir directamente
+        if (!refreshToken) {
+          console.log('⚠️ No hay refresh token, redirigiendo a login');
+          window.location.href = '/login';
+          return Promise.reject(error);
+        }
+
+        console.log('🔄 Token expirado, intentando refrescar...');
         const response = await axios.post(`${API_URL}/auth/refresh`, {
           refreshToken,
         });
@@ -37,9 +52,11 @@ api.interceptors.response.use(
         localStorage.setItem('accessToken', accessToken);
         localStorage.setItem('refreshToken', newRefreshToken);
 
+        console.log('✅ Token refrescado exitosamente');
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
+        console.error('❌ Error al refrescar token:', refreshError);
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         window.location.href = '/login';
